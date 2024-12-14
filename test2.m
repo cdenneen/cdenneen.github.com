@@ -51,4 +51,81 @@ function Ic = solar_radiation(lat, lon, date, time, tilt_angle, surface_azimuth,
     % Angle of Incidence (theta)
     cos_theta = (sin(declination) * sin(lat) * cos(tilt_angle)) - ...
                 (sin(declination) * cos(lat) * sin(tilt_angle) * cos(surface_azimuth)) + ...
-                (cos(declination) * cos(lat) * cos(tilt_angle) * cos(solar_hour_angle))
+                (cos(declination) * cos(lat) * cos(tilt_angle) * cos(solar_hour_angle)) + ...
+                (cos(declination) * sin(lat) * sin(tilt_angle) * cos(surface_azimuth) * cos(solar_hour_angle)) + ...
+                (cos(declination) * sin(tilt_angle) * sin(surface_azimuth) * sin(solar_hour_angle));
+    cos_theta = max(cos_theta, 0);
+
+    % Beam Radiation on the Collector (Ib_n * cos(theta))
+    Ib_cos_theta = Ib_n * cos_theta;
+
+    % Total Radiation on the Collector (Ic)
+    Ic = Ib_cos_theta + Id + Ir;
+end
+
+% Parameters
+latitude = 42.984333; % Syracuse, NY
+longitude = -76.142167;
+tilt_angle = 30; % Collector tilt angle (degrees)
+surface_azimuth = 10; % Collector azimuth angle (degrees)
+albedo = 0.2; % Ground reflectance
+
+% Dates for different seasons
+dates = ["2024-03-21", "2024-06-21", "2024-09-21", "2024-12-21"];
+labels = ["March 21", "June 21", "September 21", "December 21"];
+
+% Times from 4 AM to 9 PM (in 1-minute increments)
+times = arrayfun(@(x) sprintf('%02d:%02d', floor(x/60), mod(x, 60)), 4*60:21*60-1, 'UniformOutput', false);
+
+% Sunrise and Sunset Errors (in HH:MM format)
+actual_times = containers.Map({'March 21', 'June 21', 'September 21', 'December 21'}, ...
+    {{'7:05 AM', '7:18 PM'}, {'5:25 AM', '8:47 PM'}, {'6:51 AM', '7:03 PM'}, {'7:33 AM', '4:33 PM'}});
+
+% Plotting
+figure('Position', [100, 100, 1200, 700]);
+hold on;
+
+% Calculate and plot solar radiation
+for i = 1:length(dates)
+    date = dates{i};
+    label = labels{i};
+    radiation_values = zeros(1, length(times));
+    non_zero_times = {};
+
+    for j = 1:length(times)
+        time = times{j};
+        Ic = solar_radiation(latitude, longitude, date, time, tilt_angle, surface_azimuth, albedo, 1, 0.144, 0.06);
+        radiation_values(j) = Ic;
+        if Ic > 0
+            non_zero_times{end+1} = time;
+        end
+    end
+
+    % Plot solar radiation
+    plot(1:length(times), radiation_values, 'DisplayName', label);
+
+    % Calculate sunrise and sunset
+    first_non_zero = datetime(non_zero_times{1}, 'InputFormat', 'HH:mm') + hours(1);
+    last_non_zero = datetime(non_zero_times{end}, 'InputFormat', 'HH:mm') + hours(1);
+    predicted_sunrise = datestr(first_non_zero, 'HH:MM PM');
+    predicted_sunset = datestr(last_non_zero, 'HH:MM PM');
+
+    % Print the times and errors
+    actual_sunrise = datetime(actual_times(label){1}, 'InputFormat', 'hh:mm a');
+    actual_sunset = datetime(actual_times(label){2}, 'InputFormat', 'hh:mm a');
+
+    sunrise_error = minutes(first_non_zero - actual_sunrise);
+    sunset_error = minutes(last_non_zero - actual_sunset);
+
+    fprintf('%s:\n', label);
+    fprintf('  Predicted Sunrise: %s, Actual Sunrise: %s, Error: %.2f minutes\n', predicted_sunrise, actual_times(label){1}, sunrise_error);
+    fprintf('  Predicted Sunset: %s, Actual Sunset: %s, Error: %.2f minutes\n', predicted_sunset, actual_times(label){2}, sunset_error);
+end
+
+% Plot settings
+xlabel('Time');
+ylabel('Solar Radiation (W/m²)');
+title('Solar Radiation throughout the Day for Different Seasons');
+legend('show');
+grid on;
+hold off;
